@@ -4,41 +4,43 @@ name: Build Vesper APK
 on:
   workflow_dispatch:
   push:
-    paths:
-      - "app/**"
-      - ".github/workflows/build-apk.yml"
-      - "*.gradle.kts"
-      - "gradle.properties"
-      - "settings.gradle.kts"
+    branches: [main, master]
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Extraer proyecto Android
+        run: |
+          unzip -o vesper_android_ui_refresh.zip -d .
+          test -f vesper_android_v1_0/settings.gradle.kts
 
-      - name: Build debug APK
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Compilar APK
+        working-directory: vesper_android_v1_0
         run: gradle --no-daemon assembleDebug
 
-      - name: Upload APK
+      - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: vesper-android-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: vesper_android_v1_0/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
