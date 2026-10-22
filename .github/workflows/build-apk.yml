@@ -1,10 +1,12 @@
 
-name: Build Vesper APK
+name: Build Vesper Runtime APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    paths:
+      - '**.zip'
+      - '.github/workflows/build.yml'
 
 permissions:
   contents: read
@@ -13,32 +15,75 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: vesper_android_v1_0
-
     steps:
-      - name: Descargar código
+      - name: Download repository
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Compilar APK
-        run: gradle --no-daemon assembleDebug
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip zip
+          echo "ZIP encontrado en el repositorio:"
+          find . -type f -iname '*.zip' -not -path './.git/*'
 
-      - name: Guardar APK
+      - name: Extract project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_FILE="$(find . -type f \
+            -iname 'vesper_runtime*.zip' \
+            -not -path './.git/*' | head -n 1)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "::error::No se encontró vesper_runtime*.zip"
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/vesper-source"
+          unzip -q "$ZIP_FILE" -d "$RUNNER_TEMP/vesper-source"
+
+          PROJECT_DIR="$(find "$RUNNER_TEMP/vesper-source" \
+            -type f -name settings.gradle \
+            -o -type f -name settings.gradle.kts \
+            | head -n 1 | xargs -r dirname)"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "::error::El ZIP no contiene un proyecto Gradle reconocible"
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Proyecto encontrado: $PROJECT_DIR"
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew --no-daemon assembleDebug
+          else
+            sudo apt-get install -y gradle
+            gradle --no-daemon assembleDebug
+          fi
+
+      - name: Publish APK
         uses: actions/upload-artifact@v4
         with:
-          name: vesper-android-debug-apk
-          path: vesper_android_v1_0/app/build/outputs/apk/debug/*.apk
+          name: vesper-runtime-debug-apk
+          path: |
+            ${{ runner.temp }}/vesper-source/**/build/outputs/apk/**/*.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
